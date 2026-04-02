@@ -63,12 +63,6 @@ ml_masters/
 │
 ├── outputs/
 │   └── figures/
-│       ├── plot_1.png     # Insertion rate distribution + P25 threshold
-│       ├── plot_2.png     # Class balance KDE by survey timing (18 / 30 months)
-│       ├── plot_3.png     # Insertion rate by field (boxplot)
-│       ├── plot_4.png     # Median salary by field (boxplot)
-│       ├── plot_5.png     # Employment quality vs insertion (scatter + regression lines)
-│       └── plot_7.png     # Mean insertion rate over time by field
 │
 ├── requirements.txt
 └── README.md
