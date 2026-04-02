@@ -6,9 +6,10 @@
 
 ## Objective
 
-Binary classification task: predict whether a Master's program has a **low professional integration rate** 30 months after graduation. The goal is to identify vulnerable programs and guide student information or institutional support.
+Predict how well-integrated alumni from French Master's programs are into the job market. Two complementary framings are used:
 
-The classification threshold is set at the **25th percentile** of the insertion rate distribution.
+- **Continuous prediction** — predict the exact insertion rate using Linear, Ridge, and Lasso regression.
+- **Binary classification** — predict whether a program is *low integration* (insertion rate ≤ 85th–86th percentile, i.e., below the P25 threshold) using Logistic Regression and Random Forest.
 
 ---
 
@@ -20,7 +21,7 @@ The classification threshold is set at the **25th percentile** of the insertion 
 | **Source** | Ministère de l'Enseignement supérieur et de la Recherche (MESR-SIES) |
 | **Licence** | Open Data — Licence Ouverte |
 | **Unit of observation** | Program cell (year × institution × discipline) |
-| **Observations (filtered)** | ~10 584 |
+| **Observations (after filtering)** | ~10 584 |
 | **Survey timings** | 18 months and 30 months after graduation |
 
 The raw CSV uses **latin-1 encoding** and semicolon separators.
@@ -29,16 +30,18 @@ The raw CSV uses **latin-1 encoding** and semicolon separators.
 
 | Variable | Description |
 |---|---|
-| `taux_dinsertion` | **Target** — insertion rate (employment among active graduates) |
-| `code_du_domaine` | Broad field: DEG (Law & Econ), SHS (Humanities), STS (Science & Tech), LLA (Languages) |
+| `taux_dinsertion` | **Target** — insertion rate (% employed among active graduates) |
+| `domaine` / `discipline` | Broad field and specific discipline of study |
+| `diplome` | Degree type |
+| `academie` | Location of university (city) |
+| `situation` | Survey timing (18 or 30 months after degree) |
 | `emplois_cadre_ou_professions_intermediaires` | % in executive or intermediate-level positions |
 | `emplois_stables` | % in stable employment contracts |
 | `emplois_a_temps_plein` | % in full-time positions |
-| `salaire_net_median_des_emplois_a_temps_plein` | Median net monthly salary (full-time) |
 | `taux_de_chomage_regional` | Regional unemployment rate |
+| `salaire_net_mensuel_median_regional` | Median regional monthly salary of young people |
 | `femmes` | % women among graduates |
 | `de_diplomes_boursiers` | % scholarship holders |
-| `situation` | Survey timing (18 or 30 months after degree) |
 
 ---
 
@@ -52,23 +55,20 @@ ml_masters/
 │       └── fr-esr-insertion_professionnelle-master.csv
 │
 ├── src/
-│   ├── data_cleaning.py      # Loading, filtering, cleaning → exports masters_data_filtered
-│   ├── plots.py              # EDA visualisations
-│   ├── features.py           # (planned) feature engineering
-│   ├── train.py              # (planned) model training
-│   └── evaluate.py           # (planned) evaluation & metrics
+│   ├── data_cleaning.py   # Loading, filtering, cleaning → exports filtered datasets
+│   ├── features.py        # Feature engineering, encoding, scaling, target construction
+│   ├── plots.py           # EDA visualisations (plots 1–5, 7)
+│   ├── evaluate.py        # Additional diagnostics and EDA (correlation matrix, binary EDA)
+│   └── train.py           # Model training: Linear/Ridge/Lasso regression + Logistic/RF classification
 │
 ├── outputs/
 │   └── figures/
-│       ├── plot_1.png        # Insertion rate distribution + P25
-│       ├── plot_2.png        # Class balance KDE by survey timing
-│       ├── plot_3.png        # Insertion rate by field (boxplot)
-│       ├── plot_4.png        # Median salary by field (boxplot)
-│       ├── plot_5.png        # Employment quality vs insertion (scatter + regression)
-│       └── plot_7.png        # Insertion rate over time by field
-│
-├── reports/
-│   └── proposal.tex          # Project proposal (Overleaf-ready LaTeX)
+│       ├── plot_1.png     # Insertion rate distribution + P25 threshold
+│       ├── plot_2.png     # Class balance KDE by survey timing (18 / 30 months)
+│       ├── plot_3.png     # Insertion rate by field (boxplot)
+│       ├── plot_4.png     # Median salary by field (boxplot)
+│       ├── plot_5.png     # Employment quality vs insertion (scatter + regression lines)
+│       └── plot_7.png     # Mean insertion rate over time by field
 │
 ├── requirements.txt
 └── README.md
@@ -84,10 +84,17 @@ ml_masters/
 - Keeps observations with **≥ 30 responses** and **≥ 50 % response rate**
 - Replaces placeholder strings (`"nd"`, `"ns"`, `"nan"`, `"."`) with `NA`
 - Converts numerical columns to `float64` (`errors="coerce"`)
-- Drops columns with **> 70 % missing values**
-- Exports `masters_data_filtered` — imported by all other modules
+- Drops columns with **> 70 % missing values** and highly correlated redundant columns
+- Exports several filtered dataframes imported by downstream modules
 
-### 2. `src/plots.py`
+### 2. `src/features.py`
+
+- Defines categorical and numerical feature sets
+- Constructs a proxy for program size (respondents ÷ response rate)
+- Encodes the binary target: **Low Integration = 1** if insertion rate ≤ 85 (logistic models) or ≤ P25 ≈ 86 % (random forest)
+- Builds `ColumnTransformer` preprocessors (OneHotEncoder + StandardScaler)
+
+### 3. `src/plots.py`
 
 | Output | Description |
 |---|---|
@@ -95,28 +102,47 @@ ml_masters/
 | `plot_2.png` | KDE — Low vs Normal Integration, by survey timing (18 / 30 months) |
 | `plot_3.png` | Insertion rate boxplots by field |
 | `plot_4.png` | Median salary boxplots by field |
-| `plot_5.png` | 3-panel scatter: employment quality vs insertion rate, per-domain regression lines |
+| `plot_5.png` | 3-panel scatter: employment quality vs insertion rate, per-domain OLS lines |
 | `plot_7.png` | Mean insertion rate over time by field |
 
-### 3. Planned modules
+### 4. `src/evaluate.py`
 
-| Module | Role |
-|---|---|
-| `src/features.py` | Feature engineering, encoding, scaling |
-| `src/train.py` | Model training (Logistic Regression, Lasso/ElasticNet, Random Forest / GBM) |
-| `src/evaluate.py` | Cross-validation, ROC-AUC, F1, confusion matrix |
+Supplementary EDA and diagnostics:
+- Correlation matrix over numerical features
+- Pairplot and binned scatter of response variables
+- Distribution of categorical features
+- Numerical and categorical feature distributions conditioned on Low Integration
+
+### 5. `src/train.py`
+
+Trains and evaluates all models via 5-fold cross-validation:
+
+| Model | Type | Notes |
+|---|---|---|
+| Linear Regression | Continuous | OLS baseline; MSE ≈ 25.4 on CV |
+| Ridge Regression | Continuous | λ tuned over {0.01 … 10 000}; optimal λ = 100 |
+| Lasso Regression | Continuous | λ tuned over {0.0001 … 100}; optimal λ = 0.001 |
+| Logistic Regression | Binary | Unbalanced / class-weighted / threshold-adjusted variants |
+| Random Forest | Binary | One-hot encoded features, sampling weights by discipline |
 
 ---
 
-## Statistical approach
+## Modelling approach
 
-| Model | Role |
-|---|---|
-| Logistic Regression | Interpretable baseline |
-| Lasso / Elastic Net | Regularisation + automatic feature selection |
-| Random Forest / Gradient Boosting | Non-linear relationships and interactions |
+### Continuous prediction (Sections 3)
 
-Evaluation: **ROC-AUC**, **F1-score**, precision/recall, confusion matrix — via cross-validation. Class imbalance explicitly monitored.
+Linear, Ridge, and Lasso regressors are trained on year, diploma type, institution, location, department, discipline, months since graduation, % scholarship holders, % women, regional unemployment rate, and regional salary quartiles. A proxy for program size is also included.
+
+Cross-validated MSE is ~25.4 across all three models. Test-set MSE is ~22.9. The low variation in insertion rates (IQR ≈ 9 pp, σ ≈ 6.7 pp) limits further gains.
+
+### Binary classification (Sections 4–5)
+
+Programs are labelled **low integration** if their insertion rate falls below the 25th percentile (~85–86 %). Models are evaluated on accuracy, sensitivity, specificity, F1-score, and ROC-AUC (≈ 0.85 for Logistic Regression).
+
+Class imbalance (~25 % low integration) is handled via:
+- Class reweighting (`class_weight="balanced"`)
+- Decision threshold adjustment (evaluated at 0.2, 0.25, 0.3, 0.35, 0.4, 0.45)
+- Sampling weights in Random Forest
 
 ---
 
@@ -131,8 +157,10 @@ pip install -r requirements.txt
 ```
 
 ```bash
-python src/data_cleaning.py  # verify filtering output
-python src/plots.py          # generate all figures → outputs/figures/
+python src/data_cleaning.py   # verify filtering output
+python src/plots.py           # generate EDA figures → outputs/figures/
+python src/evaluate.py        # generate diagnostics figures → outputs/figures/
+python src/train.py           # run all models
 ```
 
 ---
